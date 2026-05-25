@@ -25,7 +25,6 @@
 ## Как запустить?
 
 ```bash
-cd weeks/week-17/starter
 docker compose up --build
 ```
 

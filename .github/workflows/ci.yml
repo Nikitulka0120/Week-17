@@ -1,0 +1,78 @@
+name: CI — likes-s17
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Start all services
+        run: docker-compose up -d --build
+
+      - name: Wait for PostgreSQL
+        run: |
+          echo "Ожидание готовности PostgreSQL..."
+          for i in $(seq 1 30); do
+            docker-compose exec -T postgres pg_isready -U user -d main_db && break
+            sleep 1
+          done
+          docker-compose exec -T postgres pg_isready -U user -d main_db
+
+      - name: Wait for Backend Health
+        run: |
+          echo "Ожидание запуска backend..."
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8000/health && break
+            sleep 1
+          done
+          curl -sf http://localhost:8000/health
+
+      - name: Test Products List (GET /api/products)
+        run: curl -sf http://localhost:8000/api/products
+
+      - name: Test Product Details (GET /api/products/1)
+        run: curl -sf http://localhost:8000/api/products/1
+
+      - name: Test Product Creation (POST /api/products)
+        run: |
+          curl -sf -X POST http://localhost:8000/api/products \
+            -H 'Content-Type: application/json' \
+            -d '{"name": "CI Test Item", "category": "Тест"}'
+
+      - name: Test Product Likes (POST /api/products/1/like)
+        run: curl -sf -X POST http://localhost:8000/api/products/1/like
+
+      - name: Test Stats API (GET /api/stats)
+        run: curl -sf http://localhost:8000/api/stats
+
+      - name: Test gRPC Logging (GET /api/logs)
+        run: curl -sf http://localhost:8000/api/logs
+
+      - name: Test Frontend (GET /)
+        run: curl -sf http://localhost:3000/
+
+      - name: Test Nginx Proxy (GET /api/products via port 3000)
+        run: curl -sf http://localhost:3000/api/products
+
+      - name: Show container status
+        if: always()
+        run: docker-compose ps
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker-compose logs backend
+          docker-compose logs log-svc
+
+      - name: Cleanup
+        if: always()
+        run: docker-compose down -v

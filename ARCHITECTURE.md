@@ -52,4 +52,19 @@ docker-compose up --build
 - Backend API: http://localhost:8000/docs
 - Логи: http://localhost:8000/api/logs
 
+## CI/CD
+Пайплайн описан в `.github/workflows/ci.yml`. Запускается при пуше или PR в `weeks/week-17/starter/`.
 
+**Порядок работы:**
+1. Поднимается PostgreSQL + Log Service, ожидается healthcheck БД.
+2. Поднимается Backend, ожидается `/health`.
+3. Запускаются проверки REST API:
+   - `GET /api/products` - список не пуст
+   - `GET /api/products/1` - товар найден
+   - `POST /api/products` - создание нового товара
+   - `POST /api/products/{id}/like` - инкремент лайков
+   - `GET /api/products/999` - возвращает 404
+   - `GET /api/stats` - статистика не пуста
+4. Проверяется gRPC-логирование: `GET /api/logs` - записи присутствуют.
+5. Поднимается Frontend, проверяется nginx-проксирование `/api/`.
+6. Контейнеры останавливаются и удаляются.
