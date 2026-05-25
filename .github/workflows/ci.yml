@@ -16,16 +16,16 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Start all services
-        run: docker-compose up -d --build
+        run: docker compose up -d --build
 
       - name: Wait for PostgreSQL
         run: |
           echo "Ожидание готовности PostgreSQL..."
           for i in $(seq 1 30); do
-            docker-compose exec -T postgres pg_isready -U user -d main_db && break
+            docker compose exec -T postgres pg_isready -U user -d main_db && break
             sleep 1
           done
-          docker-compose exec -T postgres pg_isready -U user -d main_db
+          docker compose exec -T postgres pg_isready -U user -d main_db
 
       - name: Wait for Backend Health
         run: |
@@ -65,14 +65,14 @@ jobs:
 
       - name: Show container status
         if: always()
-        run: docker-compose ps
+        run: docker compose ps
 
       - name: Show logs on failure
         if: failure()
         run: |
-          docker-compose logs backend
-          docker-compose logs log-svc
+          docker compose logs backend
+          docker compose logs log-svc
 
       - name: Cleanup
         if: always()
-        run: docker-compose down -v
+        run: docker compose down -v
