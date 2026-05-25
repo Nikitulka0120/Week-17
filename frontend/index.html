@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Статистика товаров</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f0f0f0;
+        margin: 0;
+        padding: 20px;
+      }
+
+      h1 {
+        color: #333333;
+        text-align: center;
+      }
+
+      h2 {
+        color: #555555;
+        margin-top: 30px;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        background-color: white;
+        padding: 20px;
+        border: 1px solid #cccccc;
+      }
+
+      .like-form {
+        margin-bottom: 30px;
+        padding: 15px;
+        background-color: #fffde7;
+        border: 1px solid #f9a825;
+      }
+
+      .like-form label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+
+      .like-form input[type="number"] {
+        padding: 6px;
+        width: 80px;
+        border: 1px solid #999;
+        margin-right: 8px;
+      }
+
+      .like-form button {
+        padding: 6px 16px;
+        background-color: #e53935;
+        color: white;
+        border: none;
+        cursor: pointer;
+      }
+
+      .like-form button:hover {
+        background-color: #b71c1c;
+      }
+
+      #like-result {
+        margin-top: 8px;
+        color: green;
+        font-size: 14px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+
+      th {
+        background-color: #1565c0;
+        color: white;
+        padding: 8px;
+        text-align: left;
+      }
+
+      td {
+        padding: 7px 8px;
+        border-bottom: 1px solid #dddddd;
+      }
+
+      tr:nth-child(even) {
+        background-color: #f5f5f5;
+      }
+
+      .charts-row {
+        display: flex;
+        gap: 20px;
+        margin-top: 20px;
+      }
+
+      .chart-box {
+        flex: 1;
+        border: 1px solid #cccccc;
+        padding: 10px;
+      }
+
+      canvas {
+        width: 100% !important;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h1>Статистика товаров</h1>
+
+      <div class="like-form">
+        <label for="like-id">Поставить лайк товару (введите ID):</label>
+        <input type="number" id="like-id" min="1" placeholder="ID" />
+        <button onclick="sendLike()">❤ Лайк</button>
+        <div id="like-result"></div>
+      </div>
+
+      <div class="charts-row">
+        <div class="chart-box">
+          <h2>Просмотры (топ-7)</h2>
+          <canvas id="chart-views" height="250"></canvas>
+        </div>
+        <div class="chart-box">
+          <h2>Лайки (топ-7)</h2>
+          <canvas id="chart-likes" height="250"></canvas>
+        </div>
+      </div>
+
+      <h2>Все товары</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Название</th>
+            <th>Категория</th>
+            <th>Просмотры</th>
+            <th>Лайки</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <tr>
+            <td colspan="5">Загрузка...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
