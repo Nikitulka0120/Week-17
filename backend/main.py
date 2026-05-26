@@ -1,5 +1,4 @@
 import os
-import random
 from datetime import datetime, timezone
 from typing import List
 
@@ -8,7 +7,7 @@ import grpc
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from database import Product as ProductModel, init_db, get_db
+from database import Product as ProductModel, get_db
 import logs_pb2
 import logs_pb2_grpc
 
@@ -44,38 +43,7 @@ def _send_log(action: str, details: str):
     except Exception as exc:
         print(f"[WARN] Не удалось отправить лог: {exc}")
 
-NAMES = [
-    "Смартфон Galaxy", "Ноутбук ProBook", "Наушники SoundPro",
-    "Умные часы FitBand", "Планшет MediaPad", "Клавиатура MechType",
-    "Мышь SilentClick", "Монитор ClearView", "Веб-камера CamHD",
-    "Колонка BassBoost", "Зарядка QuickCharge", "USB-хаб MultiPort",
-    "SSD накопитель", "Роутер NetFast", "Игровой контроллер",
-]
-CATEGORIES = ["Электроника", "Аксессуары", "Периферия", "Гаджеты"]
-
-def seed_data(db: Session):
-    if db.query(ProductModel).count() > 0:
-        return
-    for name in random.sample(NAMES, 10):
-        db.add(ProductModel(
-            name=name,
-            category=random.choice(CATEGORIES),
-            views=random.randint(100, 10000),
-            likes=random.randint(0, 500),
-        ))
-    db.commit()
-
 app = FastAPI(title="backend", root_path=APP_ROOT_PATH)
-
-@app.on_event("startup")
-def startup():
-    init_db()
-    db = next(get_db())
-    try:
-        seed_data(db)
-    finally:
-        db.close()
-
 @app.get("/health")
 async def health():
     return {"status": "ok"}

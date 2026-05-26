@@ -24,6 +24,18 @@ services:
     container_name: log-svc
     restart: unless-stopped
 
+  db-init:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: db-init
+    environment:
+      - DATABASE_URL=postgresql://user:password@postgres:5432/main_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["python", "init_db.py"]
+
   backend:
     build:
       context: .
@@ -40,6 +52,8 @@ services:
         condition: service_healthy
       log-svc:
         condition: service_started
+      db-init:
+        condition: service_completed_successfully
 
   frontend:
     build:
