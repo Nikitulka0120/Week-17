@@ -113,10 +113,18 @@
       <h1>Статистика товаров</h1>
 
       <div class="like-form">
-        <label for="like-id">Поставить лайк товару (введите ID):</label>
+        <label for="like-id">Управление лайками (введите ID):</label>
         <input type="number" id="like-id" min="1" placeholder="ID" />
-        <button onclick="sendLike()">❤ Лайк</button>
+        <button onclick="sendLike()">Лайк</button>
+        <button onclick="removeLike()" style="background-color: #757575;">Убрать лайк</button>
         <div id="like-result"></div>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <label for="category-filter" style="font-weight: bold;">Фильтр по категории:</label>
+        <select id="category-filter" onchange="filterByCategory()" style="padding: 5px; margin-left: 10px;">
+          <option value="all">Все категории</option>
+        </select>
       </div>
 
       <div class="charts-row">

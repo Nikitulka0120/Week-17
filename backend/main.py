@@ -82,6 +82,18 @@ def like_product(product_id: int, db: Session = Depends(get_db)):
     _send_log("like_product", f"Лайк товару id={product_id} ({p.name}), всего лайков: {p.likes}")
     return p
 
+@app.delete("/api/products/{product_id}/like", response_model=ProductOut)
+def unlike_product(product_id: int, db: Session = Depends(get_db)):
+    p = db.query(ProductModel).filter(ProductModel.id == product_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    if p.likes > 0:
+        p.likes -= 1
+        db.commit()
+        db.refresh(p)
+        _send_log("unlike_product", f"Удален лайк товару id={product_id} ({p.name}), всего лайков: {p.likes}")
+    return p
+
 @app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db)):
     products = db.query(ProductModel).all()

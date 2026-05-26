@@ -8,12 +8,39 @@ async function loadProducts() {
   try {
     const res = await fetch(`${API}/api/products`);
     products = await res.json();
-    renderTable(products);
-    renderCharts(products);
+    populateCategoryDropdown(products);
+    filterByCategory();
   } catch (err) {
     console.error("Ошибка при получении товаров:", err);
   }
 }
+
+function populateCategoryDropdown(list) {
+  const filter = document.getElementById("category-filter");
+  const categories = [...new Set(list.map(p => p.category))];
+  
+  filter.innerHTML = '<option value="all">Все категории</option>';
+  
+  categories.forEach(cat => {
+    const option = document.createElement("option");
+    option.value = cat;
+    option.textContent = cat;
+    filter.appendChild(option);
+  });
+}
+
+function filterByCategory() {
+  const selectedCategory = document.getElementById("category-filter").value;
+  let filteredProducts = products;
+  
+  if (selectedCategory !== "all") {
+    filteredProducts = products.filter(p => p.category === selectedCategory);
+  }
+  
+  renderTable(filteredProducts);
+  renderCharts(filteredProducts);
+}
+
 
 function renderTable(list) {
   const tbody = document.getElementById("table-body");
@@ -116,6 +143,38 @@ async function sendLike() {
   } catch (err) {
     result.style.color = "red";
     result.textContent = "Ошибка сети при отправке лайка.";
+  }
+}
+
+async function removeLike() {
+  const idInput = document.getElementById("like-id");
+  const id = idInput.value.trim();
+  const result = document.getElementById("like-result");
+
+  if (!id) {
+    result.style.color = "red";
+    result.textContent = "Введите ID товара!";
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/products/${id}/like`, {
+      method: "DELETE",
+    });
+
+    if (res.ok) {
+      const p = await res.json();
+      result.style.color = "green";
+      result.textContent = `Лайк удален! Товар: ${p.name} — теперь ${p.likes} лайков.`;
+      idInput.value = "";
+      loadProducts();
+    } else {
+      result.style.color = "red";
+      result.textContent = `Товар с ID ${id} не найден.`;
+    }
+  } catch (err) {
+    result.style.color = "red";
+    result.textContent = "Ошибка сети при удалении лайка.";
   }
 }
 
