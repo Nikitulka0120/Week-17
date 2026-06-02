@@ -5,3 +5,4 @@ sqlalchemy==2.0.40
 psycopg2-binary==2.9.10
 grpcio==1.78.0
 grpcio-tools==1.78.0
+websockets

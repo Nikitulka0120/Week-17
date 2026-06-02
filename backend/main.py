@@ -1,8 +1,9 @@
 import os
+import time
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 import grpc
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
@@ -13,6 +14,45 @@ import logs_pb2_grpc
 
 APP_ROOT_PATH = os.getenv("APP_ROOT_PATH", "")
 LOG_SVC_HOST = os.getenv("LOG_SVC_HOST", "log-svc:50051")
+
+grpc_channel = grpc.insecure_channel(LOG_SVC_HOST)
+logs_stub = logs_pb2_grpc.LogServiceStub(grpc_channel)
+
+class CircuitBreaker:
+    def __init__(self, failure_threshold=5, recovery_timeout=30):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failure_count = 0
+        self.state = "CLOSED"
+        self.last_state_change = time.time()
+
+    def allow_request(self):
+        now = time.time()
+        if self.state == "OPEN":
+            if now - self.last_state_change > self.recovery_timeout:
+                self.state = "HALF-OPEN"
+                self.last_state_change = now
+                print("[CIRCUIT BREAKER] Entering HALF-OPEN state, testing connection...")
+                return True
+            return False
+        return True
+
+    def record_success(self):
+        self.failure_count = 0
+        if self.state != "CLOSED":
+            print("[CIRCUIT BREAKER] Service recovered! Closing circuit.")
+            self.state = "CLOSED"
+            self.last_state_change = time.time()
+
+    def record_failure(self):
+        self.failure_count += 1
+        print(f"[CIRCUIT BREAKER] Failure recorded ({self.failure_count}/{self.failure_threshold})")
+        if self.failure_count >= self.failure_threshold and self.state != "OPEN":
+            print(f"[CIRCUIT BREAKER] Threshold reached! Tripping circuit to OPEN for {self.recovery_timeout} seconds.")
+            self.state = "OPEN"
+            self.last_state_change = time.time()
+
+log_cb = CircuitBreaker(failure_threshold=5, recovery_timeout=30)
 
 class ProductOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -25,25 +65,64 @@ class ProductOut(BaseModel):
 class ProductCreate(BaseModel):
     name: str
     category: str
+    views: Optional[int] = 0
+    likes: Optional[int] = 0
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+
+class PopularityUpdate(BaseModel):
+    views: Optional[int] = None
+    likes: Optional[int] = None
 
 def _send_log(action: str, details: str):
-    try:
-        channel = grpc.insecure_channel(LOG_SVC_HOST)
-        stub = logs_pb2_grpc.LogServiceStub(channel)
-        stub.SendLog(
-            logs_pb2.LogEntry(
-                service="backend",
-                action=action,
-                details=details,
-                timestamp=datetime.now(timezone.utc).isoformat(),
-            ),
-            timeout=2,
-        )
-        channel.close()
-    except Exception as exc:
-        print(f"[WARN] Не удалось отправить лог: {exc}")
+    if not log_cb.allow_request():
+        print(f"[FALLBACK LOG] {action} | {details}")
+        return
+
+    max_retries = 3
+    backoff = 0.5
+    
+    for attempt in range(max_retries):
+        try:
+            logs_stub.SendLog(
+                logs_pb2.LogEntry(
+                    service="backend",
+                    action=action,
+                    details=details,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                ),
+                timeout=1.5,
+            )
+            log_cb.record_success()
+            return
+        except Exception as exc:
+            print(f"[WARN] Попытка {attempt+1}/{max_retries} логирования не удалась: {exc}")
+            if attempt < max_retries - 1:
+                time.sleep(backoff)
+                backoff *= 2
+            else:
+                log_cb.record_failure()
+                print(f"[FALLBACK LOG] {action} | {details}")
 
 app = FastAPI(title="backend", root_path=APP_ROOT_PATH)
+
+CONNECTIONS: set[WebSocket] = set()
+
+@app.websocket("/ws/{room_id}")
+async def websocket_signaling(websocket: WebSocket, room_id: str):
+    await websocket.accept()
+    CONNECTIONS.add(websocket)
+    try:
+        async for message in websocket.iter_text():
+            for conn in list(CONNECTIONS):
+                if conn != websocket:
+                    await conn.send_text(message)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        CONNECTIONS.discard(websocket)
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -64,11 +143,53 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/products", response_model=ProductOut, status_code=201)
 def create_product(data: ProductCreate, db: Session = Depends(get_db)):
-    p = ProductModel(name=data.name, category=data.category, views=0, likes=0)
+    p = ProductModel(
+        name=data.name,
+        category=data.category,
+        views=data.views if data.views is not None else 0,
+        likes=data.likes if data.likes is not None else 0,
+    )
     db.add(p)
     db.commit()
     db.refresh(p)
-    _send_log("create_product", f"Создан товар id={p.id} ({p.name})")
+    _send_log("create_product", f"Создан товар id={p.id} ({p.name}), views={p.views}, likes={p.likes}")
+    return p
+
+@app.patch("/api/products/{product_id}", response_model=ProductOut)
+def update_product(product_id: int, data: ProductUpdate, db: Session = Depends(get_db)):
+    p = db.query(ProductModel).filter(ProductModel.id == product_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    old_name = p.name
+    if data.name is not None:
+        p.name = data.name
+    db.commit()
+    db.refresh(p)
+    _send_log("update_product", f"Товар id={product_id} переименован: '{old_name}' -> '{p.name}'")
+    return p
+
+@app.delete("/api/products/{product_id}", status_code=204)
+def delete_product(product_id: int, db: Session = Depends(get_db)):
+    p = db.query(ProductModel).filter(ProductModel.id == product_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    name = p.name
+    db.delete(p)
+    db.commit()
+    _send_log("delete_product", f"Удален товар id={product_id} ({name})")
+
+@app.put("/api/products/{product_id}/popularity", response_model=ProductOut)
+def set_popularity(product_id: int, data: PopularityUpdate, db: Session = Depends(get_db)):
+    p = db.query(ProductModel).filter(ProductModel.id == product_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Товар не найден")
+    if data.views is not None:
+        p.views = data.views
+    if data.likes is not None:
+        p.likes = data.likes
+    db.commit()
+    db.refresh(p)
+    _send_log("set_popularity", f"Обновлена популярность товара id={product_id} ({p.name}): views={p.views}, likes={p.likes}")
     return p
 
 @app.post("/api/products/{product_id}/like", response_model=ProductOut)
@@ -117,14 +238,18 @@ def get_stats(db: Session = Depends(get_db)):
 
 @app.get("/api/logs")
 def get_logs(limit: int = 50):
+    if not log_cb.allow_request():
+        raise HTTPException(
+            status_code=503, 
+            detail="Log-сервис временно недоступен (Circuit Breaker OPEN). Попробуйте позже."
+        )
     try:
-        channel = grpc.insecure_channel(LOG_SVC_HOST)
-        stub = logs_pb2_grpc.LogServiceStub(channel)
-        resp = stub.GetLogs(logs_pb2.GetLogsRequest(limit=limit), timeout=5)
-        channel.close()
+        resp = logs_stub.GetLogs(logs_pb2.GetLogsRequest(limit=limit), timeout=3)
+        log_cb.record_success()
         return [
             {"service": e.service, "action": e.action, "details": e.details, "timestamp": e.timestamp}
             for e in resp.logs
         ]
     except Exception as exc:
+        log_cb.record_failure()
         raise HTTPException(status_code=502, detail=f"Log-сервис недоступен: {exc}")
